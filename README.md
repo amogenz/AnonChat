@@ -4,7 +4,8 @@ Tanpa nomor HP, tanpa password, tanpa daftar. Buka web → pilih nama samaran �
 
 **Fitur:**
 - 📱 **UI & UX ala WhatsApp iPhone** — navbar "Chats" + search, tab bar, action sheet iOS, bubble berekor, geser-tepi untuk kembali
-- ✓✓ **Centang baca realtime** — ✓ terkirim, ✓✓ diterima, <span style="color:#34B7F1">✓✓</span> dibaca
+- ✓✓ **Centang baca realtime** — ✓ terkirim, ✓✓ diterima, <span style="color:#34B7F1">✓✓</span> dibaca (ikon SVG ala WA)
+- ⌨️ **Indikator mengetik** — "mengetik..." muncul live saat lawan bicara sedang ngetik
 - 🔵 **Status online** — "X online" di lobby, "online / terakhir dilihat" di DM
 - 🏠 **Lobby Publik** — semua orang ngobrol bareng
 - ➕ **Bikin Room sendiri** — room publik bebas (pembuat bisa hapus dengan geser kiri)
