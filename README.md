@@ -1,13 +1,16 @@
-# AnonChat — Web Chat Anonim ala WhatsApp
+# AnonChat — Web Chat Anonim ala WhatsApp iPhone
 
 Tanpa nomor HP, tanpa password, tanpa daftar. Buka web → pilih nama samaran → langsung ngobrol.
 
 **Fitur:**
-- 🏠 **Lobby Publik** — semua orang ngobrol bareng + indikator "X online"
-- ➕ **Bikin Room sendiri** — room publik bebas (pembuat bisa hapus)
+- 📱 **UI & UX ala WhatsApp iPhone** — navbar "Chats" + search, tab bar, action sheet iOS, bubble berekor, geser-tepi untuk kembali
+- ✓✓ **Centang baca realtime** — ✓ terkirim, ✓✓ diterima, <span style="color:#34B7F1">✓✓</span> dibaca
+- 🔵 **Status online** — "X online" di lobby, "online / terakhir dilihat" di DM
+- 🏠 **Lobby Publik** — semua orang ngobrol bareng
+- ➕ **Bikin Room sendiri** — room publik bebas (pembuat bisa hapus dengan geser kiri)
 - 💬 **DM privat** — via kode 6 karakter (mis. `X7K2Q9`), tanpa perlu tukaran nomor
+- 🔔 **Badge unread** — jumlah pesan belum dibaca per chat
 - ⚡ **Realtime** — pesan masuk langsung via Supabase Realtime
-- 📱 **Responsif** — enak di HP maupun laptop
 
 ## Cara menjalankan (5 menit)
 
@@ -43,10 +46,11 @@ File-file ini statis 100%, bisa di-host di mana aja:
 ## Struktur file
 ```
 anonchat/
-├── index.html            # UI: sidebar + panel chat + modal
-├── style.css             # tema gelap ala WhatsApp
-├── app.js                # logika: identitas, room, DM, realtime, presence
-├── config.js             # ← ISI INI: URL + anon key Supabase
-├── supabase-schema.sql   # schema database (dijalankan sekali)
+├── index.html               # UI: daftar chat + ruang chat ala WA iPhone
+├── style.css                # tema terang WhatsApp iPhone
+├── app.js                   # logika: identitas, room, DM, realtime, centang baca
+├── config.js                # ← ISI INI: URL + anon key Supabase
+├── supabase-schema.sql      # schema database (dijalankan sekali)
+├── supabase-migration-02.sql# migrasi v2: centang baca (dijalankan sekali)
 └── README.md
 ```
