@@ -28,6 +28,9 @@ let lobbyOnline = 0;
 let currentFilter = "";
 let markReadTimer = null;
 let usersRefreshTimer = null;
+let typingUsers = new Map();  // user_id -> { name, timeout }
+let typingSentAt = 0;
+let typingStopTimer = null;
 
 /* ---------- util ---------- */
 const $ = (id) => document.getElementById(id);
@@ -72,6 +75,16 @@ function senderColor(id) {
   for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return SENDER_COLORS[h % SENDER_COLORS.length];
 }
+
+/* centang ala WA (SVG): sent | delivered | read */
+const CHECK_PATH = "M4.6 8.4L1.8 5.6 0.4 7l4.2 4.2L12 3.8 10.6 2.4z";
+function tickSvg(status) {
+  if (!status) return "";
+  const cls = "tick " + (status === "read" ? "blue" : "gray") + (status === "sent" ? "" : " double");
+  const one = '<svg viewBox="0 0 12 11"><path d="' + CHECK_PATH + '" fill="currentColor"/></svg>';
+  return '<span class="' + cls + '">' + one + (status === "sent" ? "" : one) + "</span>";
+}
+const COPY_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 14V6a2 2 0 012-2h8" stroke-linecap="round"/></svg>';
 
 /* ---------- identitas ---------- */
 function loadIdentity() {
@@ -127,7 +140,7 @@ function renderProfile() {
   $("profile-avatar").textContent = me.name.charAt(0).toUpperCase();
   $("profile-avatar").style.background = avatarColor(me.id);
   $("profile-name").textContent = me.name;
-  $("profile-code-btn").innerHTML = escapeHtml(me.code) + " ⧉";
+  $("profile-code-btn").innerHTML = "<span>" + escapeHtml(me.code) + "</span>" + COPY_SVG;
 }
 
 /* ---------- heartbeat & presence ---------- */
@@ -248,8 +261,7 @@ function renderList() {
     let preview = lm ? lm.body : (r.type === "lobby" ? lobbyOnline + " online" : r.type === "dm" ? "chat privat" : "room publik");
     let tick = "";
     if (lm && lm.sender_id === me.id) {
-      tick = '<span class="tick ' + (msgStatus({ ...lm, room_id: r.id }) === "read" ? "blue" : "gray") + '">' +
-        (msgStatus({ ...lm, room_id: r.id }) === "sent" ? "✓" : "✓✓") + "</span>";
+      tick = tickSvg(msgStatus({ ...lm, room_id: r.id }));
     }
     b.innerHTML =
       '<span class="avatar" style="background:' + avatarColor(r.type === "dm" ? r.otherId : r.id) + '">' +
@@ -258,7 +270,7 @@ function renderList() {
         '<span class="chat-line1"><span class="chat-name">' + escapeHtml(r.name || "?") + "</span>" +
         (lm ? '<span class="chat-time' + (n ? " unread" : "") + '">' + fmtListTime(lm.created_at) + "</span>" : "") +
         "</span>" +
-        '<span class="chat-line2"><span class="chat-preview">' + tick + escapeHtml(preview).slice(0, 60) + "</span>" +
+        '<span class="chat-line2"><span class="chat-preview">' + tick + '<span class="body-text">' + escapeHtml(preview).slice(0, 60) + "</span></span>" +
         (n ? '<span class="unread-badge">' + n + "</span>" : "") +
         "</span>" +
       "</span>";
@@ -314,7 +326,8 @@ async function openRoom(id, name, type, otherId) {
   updateChatStatus();
 
   if (readsCh) sb.removeChannel(readsCh);
-  readsCh = sb.channel("reads:" + id)
+  clearTyping();
+  readsCh = sb.channel("reads:" + id, { config: { broadcast: { self: false } } })
     .on("postgres_changes",
       { event: "*", schema: "public", table: "room_reads", filter: "room_id=eq." + id },
       (p) => {
@@ -324,6 +337,8 @@ async function openRoom(id, name, type, otherId) {
         roomReads.get(id).set(r.user_id, r.last_read_at);
         updateTicks();
       })
+    .on("broadcast", { event: "typing" }, (p) => handleTyping(p.payload))
+    .on("broadcast", { event: "typing_stop" }, (p) => handleTypingStop(p.payload))
     .subscribe();
 
   scheduleMarkRead();
@@ -332,8 +347,62 @@ async function openRoom(id, name, type, otherId) {
 function closeChat() {
   $("view-chat").classList.remove("open");
   setActiveRoom(null);
+  clearTyping();
   if (readsCh) { sb.removeChannel(readsCh); readsCh = null; }
   activeRoom = null;
+}
+
+/* ---------- indikator mengetik (realtime, via broadcast) ---------- */
+function clearTyping() {
+  typingUsers.forEach((t) => clearTimeout(t.timeout));
+  typingUsers.clear();
+  clearTimeout(typingStopTimer);
+}
+
+function broadcastTyping() {
+  if (!readsCh || !activeRoom) return;
+  const now = Date.now();
+  if (now - typingSentAt > 2500) {
+    typingSentAt = now;
+    readsCh.send({ type: "broadcast", event: "typing", payload: { user_id: me.id, name: me.name } });
+  }
+  clearTimeout(typingStopTimer);
+  typingStopTimer = setTimeout(broadcastTypingStop, 3000);
+}
+
+function broadcastTypingStop() {
+  if (readsCh && activeRoom) {
+    readsCh.send({ type: "broadcast", event: "typing_stop", payload: { user_id: me.id } });
+  }
+}
+
+function handleTyping(p) {
+  if (!p || p.user_id === me.id || !activeRoom) return;
+  clearTimeout(typingUsers.get(p.user_id)?.timeout);
+  const timeout = setTimeout(() => { typingUsers.delete(p.user_id); renderTyping(); }, 3500);
+  typingUsers.set(p.user_id, { name: p.name, timeout });
+  renderTyping();
+}
+
+function handleTypingStop(p) {
+  if (!p) return;
+  clearTimeout(typingUsers.get(p.user_id)?.timeout);
+  typingUsers.delete(p.user_id);
+  renderTyping();
+}
+
+function renderTyping() {
+  if (!activeRoom) return;
+  const el = $("chat-status");
+  if (typingUsers.size) {
+    const names = [...typingUsers.values()].map((t) => t.name);
+    el.textContent = names.length === 1 ? "mengetik..." : names.length + " orang mengetik...";
+    el.classList.add("online");
+    el.classList.add("typing");
+  } else {
+    el.classList.remove("typing");
+    updateChatStatus();
+  }
 }
 
 async function setActiveRoom(id) {
@@ -352,6 +421,7 @@ async function loadRoomReads(roomId) {
 /* ---------- status chat di header ---------- */
 async function updateChatStatus() {
   if (!activeRoom) return;
+  if (typingUsers.size) { renderTyping(); return; }
   const el = $("chat-status");
   el.classList.remove("online");
   if (activeRoom.type === "lobby") {
@@ -402,7 +472,7 @@ function appendMessage(m) {
       (!own ? '<div class="sender" style="color:' + senderColor(m.sender_id) + '">' + escapeHtml(m.sender_name) + "</div>" : "") +
       '<span class="body">' + escapeHtml(m.body) + "</span>" +
       '<span class="msg-meta">' + fmtTime(m.created_at) +
-        (status ? ' <span class="tick ' + (status === "read" ? "blue" : "gray") + '">' + (status === "sent" ? "✓" : "✓✓") + "</span>" : "") +
+        (status ? " " + tickSvg(status) : "") +
       "</span>" +
     "</div>";
   box.appendChild(el);
@@ -427,8 +497,7 @@ function updateTicks() {
     const m = msgCache.get(el.dataset.mid);
     if (!m || m.sender_id !== me.id) return;
     const status = msgStatus(m);
-    let tick = el.querySelector(".msg-meta .tick");
-    const html = '<span class="tick ' + (status === "read" ? "blue" : "gray") + '">' + (status === "sent" ? "✓" : "✓✓") + "</span>";
+    const html = tickSvg(status);
     if (tick) tick.outerHTML = html;
     else el.querySelector(".msg-meta").insertAdjacentHTML("beforeend", " " + html);
   });
@@ -455,8 +524,10 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) sche
 
 /* ---------- kirim ---------- */
 function wireComposer() {
+  $("msg-input").addEventListener("input", broadcastTyping);
   $("composer").addEventListener("submit", async (e) => {
     e.preventDefault();
+    broadcastTypingStop();
     const input = $("msg-input");
     const body = input.value.trim();
     if (!body || !activeRoom) return;
@@ -598,8 +669,8 @@ async function copyMyCode() {
   try {
     await navigator.clipboard.writeText(me.code);
     const b = $("profile-code-btn");
-    b.textContent = "tersalin! ✓";
-    setTimeout(() => { b.innerHTML = escapeHtml(me.code) + " ⧉"; }, 1500);
+    b.innerHTML = "<span>tersalin!</span>" + COPY_SVG;
+    setTimeout(() => { b.innerHTML = "<span>" + escapeHtml(me.code) + "</span>" + COPY_SVG; }, 1500);
   } catch { /* clipboard tak tersedia */ }
 }
 
