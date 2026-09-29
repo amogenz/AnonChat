@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnonChat — Ngobrol Anonim</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div id="config-warning" class="hidden">
+  ⚠️ <b>config.js belum diisi.</b> Buka <code>config.js</code> lalu isi
+  <code>SUPABASE_URL</code> dan <code>SUPABASE_ANON_KEY</code> — caranya ada di README.md
+</div>
+
+<div id="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside id="sidebar">
+    <div class="side-header">
+      <div class="me">
+        <div class="avatar" id="my-avatar">?</div>
+        <div class="me-info">
+          <div class="me-name" id="my-name">…</div>
+          <button class="code-btn" id="my-code-btn" title="Salin kodeku">kode: <b id="my-code">…</b> ⧉</button>
+        </div>
+      </div>
+      <div class="side-actions">
+        <button id="btn-new-room" title="Bikin room baru">+ Room</button>
+        <button id="btn-new-dm" title="Chat privat via kode">+ DM</button>
+      </div>
+    </div>
+
+    <div class="side-section">
+      <div class="section-title">Lobby</div>
+      <div id="lobby-list" class="room-list"></div>
+    </div>
+
+    <div class="side-section">
+      <div class="section-title">Room</div>
+      <div id="custom-room-list" class="room-list"></div>
+    </div>
+
+    <div class="side-section">
+      <div class="section-title">DM</div>
+      <div id="dm-list" class="room-list"></div>
+    </div>
+  </aside>
+
+  <!-- ============ CHAT PANEL ============ -->
+  <main id="chat">
+    <div class="chat-header">
+      <button id="btn-back" class="hidden">←</button>
+      <div class="avatar" id="chat-avatar">💬</div>
+      <div class="chat-title">
+        <div id="chat-name">Pilih room dulu</div>
+        <div id="chat-sub">—</div>
+      </div>
+    </div>
+
+    <div id="messages"></div>
+
+    <form id="composer">
+      <input id="msg-input" type="text" placeholder="Ketik pesan…" autocomplete="off" maxlength="2000">
+      <button type="submit" id="send-btn">➤</button>
+    </form>
+  </main>
+</div>
+
+<!-- ============ MODAL: NAMA SAMARAN ============ -->
+<div class="modal-backdrop" id="modal-nick">
+  <div class="modal">
+    <h2>👋 Selamat datang di AnonChat</h2>
+    <p>Tanpa nomor HP, tanpa password. Cukup pilih nama samaran:</p>
+    <input id="nick-input" type="text" placeholder="Nama samaran…" maxlength="24" autocomplete="off">
+    <button id="nick-ok" class="primary">Mulai Ngobrol</button>
+  </div>
+</div>
+
+<!-- ============ MODAL: BIKIN ROOM ============ -->
+<div class="modal-backdrop hidden" id="modal-room">
+  <div class="modal">
+    <h2>Bikin Room Baru</h2>
+    <input id="room-name-input" type="text" placeholder="Nama room…" maxlength="40" autocomplete="off">
+    <div class="modal-row">
+      <button id="room-cancel" class="ghost">Batal</button>
+      <button id="room-ok" class="primary">Bikin</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: MULAI DM ============ -->
+<div class="modal-backdrop hidden" id="modal-dm">
+  <div class="modal">
+    <h2>Chat Privat (DM)</h2>
+    <p>Minta <b>kode</b> temanmu (6 karakter, mis. X7K2Q9), lalu tempel di sini:</p>
+    <input id="dm-code-input" type="text" placeholder="Kode teman…" maxlength="6" autocomplete="off" style="text-transform:uppercase">
+    <div class="modal-row">
+      <button id="dm-cancel" class="ghost">Batal</button>
+      <button id="dm-ok" class="primary">Mulai DM</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
