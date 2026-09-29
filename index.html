@@ -2,8 +2,8 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AnonChat — Ngobrol Anonim</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>AnonChat</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -15,72 +15,95 @@
 </div>
 
 <div id="app">
-  <!-- ============ SIDEBAR ============ -->
-  <aside id="sidebar">
-    <div class="side-header">
-      <div class="me">
-        <div class="avatar" id="my-avatar">?</div>
-        <div class="me-info">
-          <div class="me-name" id="my-name">…</div>
-          <button class="code-btn" id="my-code-btn" title="Salin kodeku">kode: <b id="my-code">…</b> ⧉</button>
+  <!-- ============ VIEW: DAFTAR CHAT (ala WA iPhone) ============ -->
+  <section id="view-list" class="view">
+    <header class="navbar">
+      <div class="navbar-top">
+        <span class="navbar-side"></span>
+        <button id="btn-compose" class="nav-action" title="Chat baru">✎</button>
+      </div>
+      <h1 class="nav-title">Chats</h1>
+      <div class="searchbar">
+        <span class="search-icon">🔍</span>
+        <input id="search" type="search" placeholder="Search" autocomplete="off">
+      </div>
+    </header>
+
+    <div id="pane-chats">
+      <div id="chat-list"></div>
+    </div>
+
+    <div id="pane-me" class="hidden">
+      <div class="profile-card">
+        <div class="avatar big" id="profile-avatar">?</div>
+        <div class="profile-name" id="profile-name">…</div>
+        <button class="link-btn" id="btn-edit-name">Ganti nama samaran</button>
+      </div>
+      <div class="profile-card">
+        <div class="profile-row">
+          <span>Kode DM saya</span>
+          <button class="code-pill" id="profile-code-btn" title="Salin kode">… ⧉</button>
         </div>
-      </div>
-      <div class="side-actions">
-        <button id="btn-new-room" title="Bikin room baru">+ Room</button>
-        <button id="btn-new-dm" title="Chat privat via kode">+ DM</button>
+        <p class="hint">Bagikan kode ini ke temanmu biar dia bisa mulai DM denganmu. Tanpa nomor HP, tanpa password.</p>
       </div>
     </div>
 
-    <div class="side-section">
-      <div class="section-title">Lobby</div>
-      <div id="lobby-list" class="room-list"></div>
-    </div>
+    <nav class="tabbar">
+      <button class="tab active" data-tab="chats"><span class="tab-icon">💬</span><span>Chats</span></button>
+      <button class="tab" data-tab="me"><span class="tab-icon">👤</span><span>Saya</span></button>
+    </nav>
+  </section>
 
-    <div class="side-section">
-      <div class="section-title">Room</div>
-      <div id="custom-room-list" class="room-list"></div>
-    </div>
-
-    <div class="side-section">
-      <div class="section-title">DM</div>
-      <div id="dm-list" class="room-list"></div>
-    </div>
-  </aside>
-
-  <!-- ============ CHAT PANEL ============ -->
-  <main id="chat">
-    <div class="chat-header">
-      <button id="btn-back" class="hidden">←</button>
-      <div class="avatar" id="chat-avatar">💬</div>
-      <div class="chat-title">
-        <div id="chat-name">Pilih room dulu</div>
-        <div id="chat-sub">—</div>
+  <!-- ============ VIEW: RUANG CHAT ============ -->
+  <section id="view-chat" class="view">
+    <header class="navbar chatnav">
+      <button id="btn-back" class="back-btn"><span class="chev">‹</span> Chats</button>
+      <div class="peer" id="chat-peer">
+        <span class="avatar" id="chat-avatar">?</span>
+        <span class="peer-meta">
+          <b id="chat-name">…</b>
+          <small id="chat-status">…</small>
+        </span>
       </div>
-    </div>
+      <span class="navbar-side"></span>
+    </header>
 
     <div id="messages"></div>
 
-    <form id="composer">
-      <input id="msg-input" type="text" placeholder="Ketik pesan…" autocomplete="off" maxlength="2000">
-      <button type="submit" id="send-btn">➤</button>
+    <form id="composer" autocomplete="off">
+      <button type="button" id="btn-plus" title="Lampiran">＋</button>
+      <input id="msg-input" type="text" placeholder="Message" maxlength="2000">
+      <button type="submit" id="send-btn" title="Kirim">➤</button>
     </form>
-  </main>
+  </section>
+</div>
+
+<!-- ============ ACTION SHEET (iOS) ============ -->
+<div id="sheet-backdrop" class="hidden">
+  <div class="sheet">
+    <button class="sheet-btn" data-act="dm">💬 &nbsp;DM Baru</button>
+    <button class="sheet-btn" data-act="room">👥 &nbsp;Room Baru</button>
+    <button class="sheet-btn" data-act="code">⧉ &nbsp;Salin Kode Saya</button>
+    <button class="sheet-btn cancel" data-act="cancel">Batal</button>
+  </div>
 </div>
 
 <!-- ============ MODAL: NAMA SAMARAN ============ -->
 <div class="modal-backdrop" id="modal-nick">
-  <div class="modal">
-    <h2>👋 Selamat datang di AnonChat</h2>
+  <div class="modal ios-alert">
+    <h2>Selamat datang di AnonChat 👋</h2>
     <p>Tanpa nomor HP, tanpa password. Cukup pilih nama samaran:</p>
     <input id="nick-input" type="text" placeholder="Nama samaran…" maxlength="24" autocomplete="off">
-    <button id="nick-ok" class="primary">Mulai Ngobrol</button>
+    <div class="modal-row">
+      <button id="nick-ok" class="primary">Mulai Ngobrol</button>
+    </div>
   </div>
 </div>
 
 <!-- ============ MODAL: BIKIN ROOM ============ -->
 <div class="modal-backdrop hidden" id="modal-room">
-  <div class="modal">
-    <h2>Bikin Room Baru</h2>
+  <div class="modal ios-alert">
+    <h2>Room Baru</h2>
     <input id="room-name-input" type="text" placeholder="Nama room…" maxlength="40" autocomplete="off">
     <div class="modal-row">
       <button id="room-cancel" class="ghost">Batal</button>
@@ -91,13 +114,25 @@
 
 <!-- ============ MODAL: MULAI DM ============ -->
 <div class="modal-backdrop hidden" id="modal-dm">
-  <div class="modal">
-    <h2>Chat Privat (DM)</h2>
+  <div class="modal ios-alert">
+    <h2>DM Baru</h2>
     <p>Minta <b>kode</b> temanmu (6 karakter, mis. X7K2Q9), lalu tempel di sini:</p>
     <input id="dm-code-input" type="text" placeholder="Kode teman…" maxlength="6" autocomplete="off" style="text-transform:uppercase">
     <div class="modal-row">
       <button id="dm-cancel" class="ghost">Batal</button>
       <button id="dm-ok" class="primary">Mulai DM</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: GANTI NAMA ============ -->
+<div class="modal-backdrop hidden" id="modal-name">
+  <div class="modal ios-alert">
+    <h2>Ganti Nama Samaran</h2>
+    <input id="name-input" type="text" placeholder="Nama samaran baru…" maxlength="24" autocomplete="off">
+    <div class="modal-row">
+      <button id="name-cancel" class="ghost">Batal</button>
+      <button id="name-ok" class="primary">Simpan</button>
     </div>
   </div>
 </div>
