@@ -327,3 +327,38 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 @media (min-width: 761px) {
   #btn-back { display: none; }
 }
+
+/* ================= v3: satu layar lobby + daftar online ================= */
+#view-chat { transform: none; position: relative; z-index: 1; box-shadow: none; }
+
+#btn-online { position: relative; color: var(--ios-blue); }
+.online-pill {
+  position: absolute; top: 2px; right: 2px;
+  min-width: 17px; height: 17px; padding: 0 4px;
+  background: var(--wa-green-dark); color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 17px; text-align: center;
+  border-radius: 9px;
+}
+
+#online-panel {
+  background: var(--bg); border-bottom: 1px solid var(--divider);
+  max-height: 38dvh; overflow-y: auto; z-index: 15;
+  box-shadow: 0 8px 20px rgba(0,0,0,.08);
+}
+.online-head {
+  padding: 10px 16px 6px; font-size: 13px; font-weight: 600;
+  color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em;
+}
+#online-list { padding-bottom: 8px; }
+.online-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 16px;
+}
+.online-row.me { background: var(--bg-soft); }
+.avatar.sm { width: 30px; height: 30px; font-size: 14px; }
+.online-name { flex: 1; font-size: 15px; }
+.online-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--wa-green-dark);
+  box-shadow: 0 0 0 3px rgba(0,168,132,.15);
+}
