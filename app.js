@@ -1,24 +1,30 @@
 /* ============================================================
- * AnonChat v3 — simpel: isi nama → lihat siapa online → ngobrol
- * Satu lobby publik. Chat otomatis hilang setelah 24 jam.
+ * AnonChat v4 — gerbang sandi + centang dibaca + typing fix
+ * Alur: sandi (server) → nama → lobby. Chat hilang stlh 24 jam.
  * ============================================================ */
 
 const LOBBY_ID = "00000000-0000-0000-0000-000000000001";
 const LS_ID = "ac_id";
 const LS_NAME = "ac_name";
-const ONLINE_MS = 90000;       // dianggap online kalau last_seen < 90 dtk
+const LS_TOKEN = "ac_gate";
+const ONLINE_MS = 90000;
 const HEARTBEAT_MS = 20000;
-const MSG_TTL_MS = 24 * 3600 * 1000; // chat kedaluwarsa setelah 24 jam
+const MSG_TTL_MS = 24 * 3600 * 1000;
 
 let sb = null;
-let me = null;                 // { id, code, name }
+let me = null;
 let msgCh = null, presenceCh = null;
 let renderedIds = new Set();
-let msgCache = new Map();      // mid -> msg
-let typingUsers = new Map();   // user_id -> { name, timeout }
+let msgCache = new Map();
+let typingUsers = new Map();
 let typingSentAt = 0;
 let typingStopTimer = null;
 let onlineTimer = null;
+let lastOnlineText = "menghubungkan…";
+let markedDelivered = new Set();
+let markedRead = new Set();
+let markTimer = null;
+const markQueue = { delivered: new Set(), read: new Set() };
 
 /* ---------- util ---------- */
 const $ = (id) => document.getElementById(id);
@@ -56,6 +62,20 @@ function senderColor(id) {
   return SENDER_COLORS[h % SENDER_COLORS.length];
 }
 
+/* ---------- centang ala WA ---------- */
+const TICK_PATH = '<path d="M1.5 7.2l3.8 3.8L13.8 2.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>';
+function tickHTML(kind) {
+  // kind: sent (1 abu) | delivered (2 abu) | read (2 biru)
+  if (kind === "read") return '<span class="tick double blue"><svg viewBox="0 0 16 13">' + TICK_PATH + '</svg><svg viewBox="0 0 16 13">' + TICK_PATH + '</svg></span>';
+  if (kind === "delivered") return '<span class="tick double gray"><svg viewBox="0 0 16 13">' + TICK_PATH + '</svg><svg viewBox="0 0 16 13">' + TICK_PATH + '</svg></span>';
+  return '<span class="tick gray"><svg viewBox="0 0 16 13">' + TICK_PATH + '</svg></span>';
+}
+function tickKind(m) {
+  if ((m.read_by || []).length > 0) return "read";
+  if ((m.delivered_to || []).length > 0) return "delivered";
+  return "sent";
+}
+
 /* ---------- identitas ---------- */
 function loadIdentity() {
   let id = localStorage.getItem(LS_ID);
@@ -67,16 +87,79 @@ function loadIdentity() {
   };
 }
 
+/* ---------- gerbang sandi (verifikasi server) ---------- */
+async function checkGate() {
+  const token = sessionStorage.getItem(LS_TOKEN);
+  if (!token) return false;
+  try {
+    const r = await fetch("/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const j = await r.json();
+    return !!j.ok;
+  } catch { return false; }
+}
+
+function showGate() {
+  $("gate").classList.remove("hidden");
+  $("modal-nick").classList.add("hidden");
+  const input = $("gate-input");
+  input.focus();
+  const submit = async () => {
+    const btn = $("gate-ok");
+    btn.disabled = true;
+    btn.textContent = "Memeriksa…";
+    $("gate-error").classList.add("hidden");
+    try {
+      const r = await fetch("/api/gate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: input.value }),
+      });
+      const j = await r.json();
+      if (j.ok && j.token) {
+        sessionStorage.setItem(LS_TOKEN, j.token);
+        $("gate").classList.add("hidden");
+        afterGate();
+      } else {
+        $("gate-error").classList.remove("hidden");
+        input.value = "";
+        input.focus();
+      }
+    } catch {
+      $("gate-error").textContent = "Gangguan jaringan. Coba lagi.";
+      $("gate-error").classList.remove("hidden");
+    }
+    btn.disabled = false;
+    btn.textContent = "Buka";
+  };
+  $("gate-ok").onclick = submit;
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+}
+
 /* ---------- boot ---------- */
 window.addEventListener("DOMContentLoaded", async () => {
   if (!isConfigured()) {
     $("config-warning").classList.remove("hidden");
     $("modal-nick").classList.add("hidden");
+    $("gate").classList.add("hidden");
     return;
   }
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   me = loadIdentity();
 
+  if (await checkGate()) {
+    $("gate").classList.add("hidden");
+    afterGate();
+  } else {
+    sessionStorage.removeItem(LS_TOKEN);
+    showGate();
+  }
+});
+
+function afterGate() {
   if (!me.name) {
     $("nick-input").focus();
     $("nick-ok").onclick = () => {
@@ -92,14 +175,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     $("modal-nick").classList.add("hidden");
     boot();
   }
-});
+}
 
 async function boot() {
   await sb.from("users").upsert(
     { id: me.id, code: me.code, name: me.name, last_seen: new Date().toISOString(), active_room_id: LOBBY_ID },
     { onConflict: "id" }
   );
-  await purgeExpired();          // hapus chat > 24 jam (fitur default)
+  await purgeExpired();
   wireUI();
   setupPresence();
   setInterval(heartbeat, HEARTBEAT_MS);
@@ -107,6 +190,11 @@ async function boot() {
   subscribeMessages();
   await refreshOnlineList();
   onlineTimer = setInterval(refreshOnlineList, 15000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") markVisibleAsRead();
+    else broadcastTypingStop();
+  });
+  window.addEventListener("pagehide", () => broadcastTypingStop());
 }
 
 /* ---------- auto-hapus chat lebih dari 24 jam ---------- */
@@ -123,7 +211,7 @@ async function heartbeat() {
   }).eq("id", me.id);
 }
 
-/* ---------- presence: hitung & daftar yang online ---------- */
+/* ---------- presence ---------- */
 function setupPresence() {
   presenceCh = sb.channel("lobby-presence", { config: { presence: { key: me.id } } });
   presenceCh.on("presence", { event: "sync" }, () => {
@@ -139,7 +227,16 @@ function updateOnlineCount() {
   const pill = $("online-count");
   pill.textContent = n;
   pill.classList.toggle("hidden", n <= 1);
-  updateStatus();
+  setOnlineText(n);
+}
+
+function setOnlineText(n) {
+  if (typingUsers.size) return; // jangan timpa indikator mengetik
+  lastOnlineText = n > 1 ? n + " online" : "hanya kamu di sini";
+  const el = $("chat-status");
+  el.classList.remove("typing");
+  el.classList.toggle("online", n > 1);
+  el.textContent = lastOnlineText;
 }
 
 async function refreshOnlineList() {
@@ -164,17 +261,7 @@ async function refreshOnlineList() {
   if (!list.children.length) {
     list.innerHTML = '<div class="empty-note">Belum ada yang online.</div>';
   }
-  updateStatus((data || []).length);
-}
-
-function updateStatus(onlineN) {
-  const el = $("chat-status");
-  if (typingUsers.size) { renderTyping(); return; }
-  el.classList.remove("online", "typing");
-  if (typeof onlineN === "number") {
-    el.textContent = onlineN > 1 ? onlineN + " online" : "hanya kamu di sini";
-    if (onlineN > 1) el.classList.add("online");
-  }
+  setOnlineText((data || []).length);
 }
 
 /* ---------- pesan ---------- */
@@ -183,20 +270,22 @@ function scrollBottom() {
   box.scrollTop = box.scrollHeight;
 }
 
-function appendMessage(m) {
+function appendMessage(m, animate) {
   if (renderedIds.has(m.id)) return;
   renderedIds.add(m.id);
   msgCache.set(m.id, m);
 
   const box = $("messages");
-  const prev = box.querySelector(".msg:last-of-type");
+  const typingEl = $("typing-bubble");
+  const msgs = box.querySelectorAll(".msg[data-mid]");
+  const prev = msgs.length ? msgs[msgs.length - 1] : null;
   const prevM = prev ? msgCache.get(prev.dataset.mid) : null;
   const dayChanged = !prevM || new Date(prevM.created_at).toDateString() !== new Date(m.created_at).toDateString();
   if (dayChanged) {
     const d = document.createElement("div");
     d.className = "day-pill";
     d.textContent = fmtDay(m.created_at);
-    box.appendChild(d);
+    if (typingEl) box.insertBefore(d, typingEl); else box.appendChild(d);
   }
 
   const own = m.sender_id === me.id;
@@ -204,26 +293,79 @@ function appendMessage(m) {
     (new Date(m.created_at) - new Date(prevM.created_at)) < 5 * 60000 && !dayChanged;
 
   const el = document.createElement("div");
-  el.className = "msg " + (own ? "out" : "in") + (grouped ? " grouped" : "");
+  el.className = "msg " + (own ? "out" : "in") + (grouped ? " grouped" : "") + (animate ? " pop" : "");
   el.dataset.mid = m.id;
+  const meta = own
+    ? '<span class="msg-meta">' + fmtTime(m.created_at) + tickHTML(tickKind(m)) + "</span>"
+    : '<span class="msg-meta">' + fmtTime(m.created_at) + "</span>";
   el.innerHTML =
     '<div class="bubble">' +
       (!own ? '<div class="sender" style="color:' + senderColor(m.sender_id) + '">' + escapeHtml(m.sender_name) + "</div>" : "") +
-      '<span class="body">' + escapeHtml(m.body) + "</span>" +
-      '<span class="msg-meta">' + fmtTime(m.created_at) + "</span>" +
+      '<span class="body">' + escapeHtml(m.body) + "</span>" + meta +
     "</div>";
-  box.appendChild(el);
+  if (typingEl) box.insertBefore(el, typingEl); else box.appendChild(el);
+
+  if (!own) {
+    if (!markedDelivered.has(m.id)) queueMark("delivered", m.id);
+    if (document.visibilityState === "visible" && !markedRead.has(m.id)) queueMark("read", m.id);
+  }
+}
+
+function updateTicks(m) {
+  if (!m || m.sender_id !== me.id) return;
+  const el = document.querySelector('[data-mid="' + m.id + '"]');
+  if (!el) return;
+  const meta = el.querySelector(".msg-meta");
+  if (meta) meta.innerHTML = fmtTime(m.created_at) + tickHTML(tickKind(m));
+  const cached = msgCache.get(m.id) || {};
+  msgCache.set(m.id, { ...cached, delivered_to: m.delivered_to, read_by: m.read_by });
+}
+
+/* ---------- antrean penanda dibaca (debounce, hemat tulis) ---------- */
+function queueMark(kind, mid) {
+  markQueue[kind].add(mid);
+  clearTimeout(markTimer);
+  markTimer = setTimeout(flushMarks, 1200);
+}
+
+async function flushMarks() {
+  if (!sb || !me) return;
+  const jobs = [];
+  markQueue.delivered.forEach((mid) => { markedDelivered.add(mid); jobs.push(["delivered", mid]); });
+  markQueue.read.forEach((mid) => { markedRead.add(mid); jobs.push(["read", mid]); });
+  markQueue.delivered.clear(); markQueue.read.clear();
+  for (const [kind, mid] of jobs) {
+    try { await sb.rpc("mark_msg", { p_mid: mid, p_uid: me.id, p_kind: kind }); } catch {}
+  }
+}
+
+function markVisibleAsRead() {
+  msgCache.forEach((m, mid) => {
+    if (m.sender_id !== me.id && !markedRead.has(mid)) queueMark("read", mid);
+  });
 }
 
 async function loadMessages() {
   const cutoff = new Date(Date.now() - MSG_TTL_MS).toISOString();
   const { data } = await sb.from("messages")
-    .select("id,sender_id,sender_name,body,created_at")
+    .select("id,sender_id,sender_name,body,created_at,delivered_to,read_by")
     .eq("room_id", LOBBY_ID)
     .gt("created_at", cutoff)
     .order("created_at", { ascending: true })
     .limit(100);
-  (data || []).forEach(appendMessage);
+  (data || []).forEach((m) => {
+    appendMessage(m, false);
+    if (m.sender_id !== me.id) {
+      markedDelivered.add(m.id);
+      if (document.visibilityState === "visible") markedRead.add(m.id);
+    }
+  });
+  (data || []).forEach((m) => {
+    if (m.sender_id !== me.id) {
+      queueMark("delivered", m.id);
+      if (document.visibilityState === "visible") queueMark("read", m.id);
+    }
+  });
   scrollBottom();
 }
 
@@ -235,20 +377,27 @@ function subscribeMessages() {
         const m = p.new;
         if (!m || renderedIds.has(m.id)) return;
         if (m.sender_id !== me.id) {
-          appendMessage(m);
+          appendMessage(m, true);
           scrollBottom();
         }
+      })
+    .on("postgres_changes",
+      { event: "UPDATE", schema: "public", table: "messages", filter: "room_id=eq." + LOBBY_ID },
+      (p) => {
+        const m = p.new;
+        if (m) updateTicks(m);
       })
     .on("broadcast", { event: "typing" }, (p) => handleTyping(p.payload))
     .on("broadcast", { event: "typing_stop" }, (p) => handleTypingStop(p.payload))
     .subscribe();
 }
 
-/* ---------- indikator mengetik ---------- */
+/* ---------- indikator mengetik (diperbaiki) ---------- */
 function clearTyping() {
   typingUsers.forEach((t) => clearTimeout(t.timeout));
   typingUsers.clear();
   clearTimeout(typingStopTimer);
+  hideTypingBubble();
 }
 
 function broadcastTyping() {
@@ -263,14 +412,15 @@ function broadcastTyping() {
 }
 
 function broadcastTypingStop() {
-  if (msgCh) msgCh.send({ type: "broadcast", event: "typing_stop", payload: { user_id: me.id } });
+  clearTimeout(typingStopTimer);
+  if (msgCh && me) msgCh.send({ type: "broadcast", event: "typing_stop", payload: { user_id: me.id } });
 }
 
 function handleTyping(p) {
   if (!p || p.user_id === me.id) return;
   clearTimeout(typingUsers.get(p.user_id)?.timeout);
-  const timeout = setTimeout(() => { typingUsers.delete(p.user_id); renderTyping(); }, 3500);
-  typingUsers.set(p.user_id, { name: p.name, timeout });
+  const timeout = setTimeout(() => { typingUsers.delete(p.user_id); renderTyping(); }, 4000);
+  typingUsers.set(p.user_id, { name: p.name || "Seseorang", timeout });
   renderTyping();
 }
 
@@ -285,21 +435,46 @@ function renderTyping() {
   const el = $("chat-status");
   if (typingUsers.size) {
     const names = [...typingUsers.values()].map((t) => t.name);
-    el.textContent = names.length === 1 ? "mengetik..." : names.length + " orang mengetik...";
+    el.textContent = names.length === 1
+      ? names[0] + " mengetik…"
+      : names.length === 2
+        ? names[0] + " dan " + names[1] + " mengetik…"
+        : names[0] + " dan " + (names.length - 1) + " lainnya mengetik…";
     el.classList.add("online", "typing");
+    showTypingBubble();
   } else {
     el.classList.remove("typing");
-    refreshOnlineList();
+    el.textContent = lastOnlineText; // kembalikan teks online tanpa query ulang
+    hideTypingBubble();
   }
+}
+
+function showTypingBubble() {
+  let b = $("typing-bubble");
+  if (!b) {
+    b = document.createElement("div");
+    b.id = "typing-bubble";
+    b.className = "msg in";
+    b.innerHTML = '<div class="bubble typing-dots"><span></span><span></span><span></span></div>';
+    $("messages").appendChild(b);
+  }
+  b.style.display = "flex";
+  scrollBottom();
+}
+
+function hideTypingBubble() {
+  const b = $("typing-bubble");
+  if (b) b.style.display = "none";
 }
 
 /* ---------- kirim ---------- */
 function wireUI() {
-  $("msg-input").addEventListener("input", broadcastTyping);
+  const input = $("msg-input");
+  input.addEventListener("input", broadcastTyping);
+  input.addEventListener("blur", broadcastTypingStop);
   $("composer").addEventListener("submit", async (e) => {
     e.preventDefault();
     broadcastTypingStop();
-    const input = $("msg-input");
     const body = input.value.trim();
     if (!body) return;
     input.value = "";
@@ -308,8 +483,9 @@ function wireUI() {
     const m = {
       id: tmpId, sender_id: me.id, sender_name: me.name,
       body: body.slice(0, 2000), created_at: new Date().toISOString(),
+      delivered_to: [], read_by: [],
     };
-    appendMessage(m);
+    appendMessage(m, true);
     scrollBottom();
 
     const { data, error } = await sb.from("messages")
@@ -325,7 +501,7 @@ function wireUI() {
     if (el) {
       el.dataset.mid = data.id;
       const meta = el.querySelector(".msg-meta");
-      if (meta) meta.textContent = fmtTime(data.created_at);
+      if (meta) meta.innerHTML = fmtTime(data.created_at) + tickHTML("sent");
     }
     renderedIds.delete(tmpId); renderedIds.add(data.id);
     msgCache.delete(tmpId);
