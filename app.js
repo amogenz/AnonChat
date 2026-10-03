@@ -347,12 +347,22 @@ function markVisibleAsRead() {
 
 async function loadMessages() {
   const cutoff = new Date(Date.now() - MSG_TTL_MS).toISOString();
-  const { data } = await sb.from("messages")
+  let { data, error } = await sb.from("messages")
     .select("id,sender_id,sender_name,body,created_at,delivered_to,read_by")
     .eq("room_id", LOBBY_ID)
     .gt("created_at", cutoff)
     .order("created_at", { ascending: true })
     .limit(100);
+  if (error && /column/i.test(error.message || "")) {
+    // fallback: migrasi v4 belum dijalankan — jalan tanpa centang ganda
+    const r2 = await sb.from("messages")
+      .select("id,sender_id,sender_name,body,created_at")
+      .eq("room_id", LOBBY_ID)
+      .gt("created_at", cutoff)
+      .order("created_at", { ascending: true })
+      .limit(100);
+    data = r2.data;
+  }
   (data || []).forEach((m) => {
     appendMessage(m, false);
     if (m.sender_id !== me.id) {
