@@ -192,6 +192,7 @@ async function boot() {
 
   try { await purgeExpired(); } catch (e) { console.warn("purge gagal:", e); }
 
+  notifyLogin(); // kabari Bos via Telegram (sekali per sesi)
   wireUI();
   setupPresence();
   setInterval(heartbeat, HEARTBEAT_MS);
@@ -540,6 +541,20 @@ async function selfDestruct() {
   } catch {}
   // 3) refresh otomatis → wajib masuk sandi lagi
   location.reload();
+}
+
+/* ---------- notif Telegram tiap login ---------- */
+let loginNotified = false;
+async function notifyLogin() {
+  if (loginNotified) return;
+  loginNotified = true;
+  try {
+    await fetch("/api/login-notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: sessionStorage.getItem(LS_TOKEN), name: me.name }),
+    });
+  } catch {}
 }
 
 /* ---------- kirim ---------- */
