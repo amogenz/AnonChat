@@ -1,6 +1,6 @@
 /* ============================================================
- * AnonChat v4 — gerbang sandi + centang dibaca + typing fix
- * Alur: sandi (server) → nama → lobby. Chat hilang stlh 24 jam.
+ * AnonChat v5 — gerbang sandi + centang dibaca + typing fix + bom 20 mnt
+ * Alur: sandi (server) → nama → lobby. Chat & sesi hancur tiap 20 mnt.
  * ============================================================ */
 
 const LOBBY_ID = "00000000-0000-0000-0000-000000000001";
@@ -9,7 +9,9 @@ const LS_NAME = "ac_name";
 const LS_TOKEN = "ac_gate";
 const ONLINE_MS = 90000;
 const HEARTBEAT_MS = 20000;
-const MSG_TTL_MS = 24 * 3600 * 1000;
+const MSG_TTL_MS = 20 * 60 * 1000;      // chat hancur otomatis setelah 20 menit
+const SELF_DESTRUCT_MS = 20 * 60 * 1000; // sesi hancur total tiap 20 menit
+const SELF_DESTRUCT_WARN_MS = 60 * 1000; // peringatan 60 detik sebelumnya
 
 let sb = null;
 let me = null;
@@ -161,6 +163,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
 function afterGate() {
   if (!me.name) {
+    $("modal-nick").classList.remove("hidden"); // FIX: modal sempat di-hidden oleh showGate()
     $("nick-input").focus();
     $("nick-ok").onclick = () => {
       const v = $("nick-input").value.trim().slice(0, 24);
@@ -178,18 +181,37 @@ function afterGate() {
 }
 
 async function boot() {
-  await sb.from("users").upsert(
-    { id: me.id, code: me.code, name: me.name, last_seen: new Date().toISOString(), active_room_id: LOBBY_ID },
-    { onConflict: "id" }
-  );
-  await purgeExpired();
+  // Setiap langkah dibungkus try/catch: satu gagal, yang lain tetap jalan.
+  // Status "menghubungkan…" tidak boleh nyangkut selamanya.
+  try {
+    await sb.from("users").upsert(
+      { id: me.id, code: me.code, name: me.name, last_seen: new Date().toISOString(), active_room_id: LOBBY_ID },
+      { onConflict: "id" }
+    );
+  } catch (e) { console.warn("upsert user gagal:", e); }
+
+  try { await purgeExpired(); } catch (e) { console.warn("purge gagal:", e); }
+
   wireUI();
   setupPresence();
   setInterval(heartbeat, HEARTBEAT_MS);
-  await loadMessages();
+
+  // daftar online dulu (REST, cepat) biar status langsung hidup
+  try { await refreshOnlineList(); } catch (e) { console.warn("online list gagal:", e); }
+
+  try { await loadMessages(); } catch (e) { console.warn("load messages gagal:", e); }
   subscribeMessages();
-  await refreshOnlineList();
+
   onlineTimer = setInterval(refreshOnlineList, 15000);
+
+  // pengaman terakhir: kalau 10 detik masih "menghubungkan…", paksa tampil
+  setTimeout(() => {
+    const el = $("chat-status");
+    if (el && el.textContent === "menghubungkan…") setOnlineText(1);
+  }, 10000);
+
+  startSelfDestruct();
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") markVisibleAsRead();
     else broadcastTypingStop();
@@ -475,6 +497,49 @@ function showTypingBubble() {
 function hideTypingBubble() {
   const b = $("typing-bubble");
   if (b) b.style.display = "none";
+}
+
+/* ---------- bom waktu 20 menit: hancurkan semua, refresh, sandi lagi ---------- */
+let destructTimer = null;
+let destructWarnTimer = null;
+
+function startSelfDestruct() {
+  clearTimeout(destructTimer);
+  clearTimeout(destructWarnTimer);
+  destructWarnTimer = setTimeout(showDestructWarning, SELF_DESTRUCT_MS - SELF_DESTRUCT_WARN_MS);
+  destructTimer = setTimeout(selfDestruct, SELF_DESTRUCT_MS);
+}
+
+function showDestructWarning() {
+  let w = $("destruct-warning");
+  if (!w) {
+    w = document.createElement("div");
+    w.id = "destruct-warning";
+    w.innerHTML = "Sesi hancur dalam <b>60 detik</b> — semua chat & data di perangkat ini akan dihapus.";
+    document.body.appendChild(w);
+  }
+  w.classList.add("show");
+  let s = 60;
+  const iv = setInterval(() => {
+    s--;
+    if (s <= 0) { clearInterval(iv); return; }
+    w.innerHTML = "Sesi hancur dalam <b>" + s + " detik</b> — semua chat & data di perangkat ini akan dihapus.";
+  }, 1000);
+}
+
+async function selfDestruct() {
+  // 1) hapus jejak aktivitas milik sendiri di server
+  try { if (sb && me) await sb.from("users").delete().eq("id", me.id); } catch {}
+  try { if (msgCh) await sb.removeChannel(msgCh); } catch {}
+  try { if (presenceCh) await sb.removeChannel(presenceCh); } catch {}
+  // 2) hancurkan cache lokal: identitas, nama, token sandi
+  try {
+    localStorage.removeItem(LS_ID);
+    localStorage.removeItem(LS_NAME);
+    sessionStorage.clear();
+  } catch {}
+  // 3) refresh otomatis → wajib masuk sandi lagi
+  location.reload();
 }
 
 /* ---------- kirim ---------- */

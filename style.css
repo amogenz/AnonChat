@@ -434,3 +434,15 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 .chatnav { box-shadow: 0 1px 0 rgba(0,0,0,.04); }
 .msg-meta .tick { vertical-align: -1px; }
 #typing-bubble { margin-top: 2px; }
+
+/* ================= v5: PERINGATAN BOM WAKTU ================= */
+#destruct-warning {
+  position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; z-index: 90;
+  background: #7f1d1d; color: #fecaca; border: 1px solid #ef4444;
+  font-size: 14px; text-align: center; padding: 10px 14px; border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  transform: translateY(-80px); opacity: 0; transition: transform .3s, opacity .3s;
+  pointer-events: none;
+}
+#destruct-warning.show { transform: translateY(0); opacity: 1; }
+#destruct-warning b { color: #fff; }
