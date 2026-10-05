@@ -446,3 +446,76 @@ svg { display: inline-block; vertical-align: middle; flex-shrink: 0; }
 }
 #destruct-warning.show { transform: translateY(0); opacity: 1; }
 #destruct-warning b { color: #fff; }
+
+/* ================= v6: CHIP HITUNG MUNDUR BOM ================= */
+.destruct-chip {
+  font-size: 12px; font-weight: 600; color: #b45309; background: #fef3c7;
+  border: 1px solid #fcd34d; border-radius: 999px; padding: 3px 10px;
+  margin-right: 4px; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.destruct-chip.danger { color: #fff; background: #dc2626; border-color: #dc2626; }
+
+/* ================= v6: TOMBOL GAMBAR DI COMPOSER ================= */
+#img-btn {
+  width: 34px; height: 34px; border: none; flex-shrink: 0;
+  background: none; color: var(--ios-blue, #0A84FF);
+  cursor: pointer; display: flex; align-items: center; justify-content: center; margin-bottom: 1px;
+}
+#img-btn:active { transform: scale(.9); }
+
+/* ================= v6: BUBBLE GAMBAR DILIHAT-SEKALI ================= */
+.vo-wrap {
+  position: relative; width: 210px; height: 150px; border-radius: 10px;
+  overflow: hidden; background: #0b141a; margin: 2px 0 4px;
+}
+.vo-blur {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  filter: blur(22px) brightness(.75); transform: scale(1.15); pointer-events: none;
+}
+.vo-open {
+  position: absolute; inset: 0; width: 100%; border: none; cursor: pointer;
+  background: rgba(11,20,26,.25); color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  font-family: inherit; text-align: center; padding: 12px;
+}
+.vo-open:active { background: rgba(11,20,26,.45); }
+.vo-title { font-size: 14px; font-weight: 700; }
+.vo-sub { font-size: 11px; opacity: .85; line-height: 1.35; }
+.vo-wrap.burned { height: auto; background: none; }
+.vo-burned {
+  display: flex; align-items: center; gap: 8px; color: var(--text-dim);
+  font-size: 13px; font-style: italic; padding: 6px 2px;
+}
+.vo-burned svg { width: 22px; height: 22px; flex-shrink: 0; opacity: .6; }
+
+/* ================= v6: PENAMPIL GAMBAR (FULLSCREEN) ================= */
+#vo-viewer {
+  position: fixed; inset: 0; z-index: 120; background: rgba(0,0,0,.96);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn .18s ease;
+}
+#vo-viewer.hidden { display: none; }
+#vo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.vo-top {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  background: linear-gradient(rgba(0,0,0,.6), transparent);
+}
+.vo-note { color: #fbbf24; font-size: 13px; font-weight: 600; }
+#vo-close {
+  width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(255,255,255,.15); color: #fff; font-size: 17px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ================= v6: TOAST ================= */
+#toast {
+  position: fixed; bottom: calc(76px + env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%) translateY(16px); z-index: 130;
+  background: rgba(17,24,39,.94); color: #fff; font-size: 13px;
+  padding: 10px 16px; border-radius: 999px; max-width: 88vw; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s;
+  box-shadow: 0 8px 24px rgba(0,0,0,.3);
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

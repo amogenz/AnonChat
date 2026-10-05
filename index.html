@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>AnonChat</title>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -39,6 +39,7 @@
           <small id="chat-status">menghubungkan…</small>
         </span>
       </div>
+      <span id="destruct-chip" class="destruct-chip" title="Semua chat & sesi hancur otomatis — sisa waktu">&#9203; 20:00</span>
       <button id="btn-online" class="nav-action" title="Siapa yang online" aria-label="Daftar online">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.7 5.5-4.7s4.9 1.7 5.5 4.7"/><circle cx="16.5" cy="9" r="2.6"/><path d="M15.8 14.7c2.2.3 3.8 1.8 4.3 4.3"/></svg>
         <span id="online-count" class="online-pill hidden">0</span>
@@ -54,6 +55,10 @@
     <div id="messages"></div>
 
     <form id="composer" autocomplete="off">
+      <button type="button" id="img-btn" title="Kirim gambar (dilihat sekali)" aria-label="Kirim gambar">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="M3.5 17.5l4.5-4.5 3 3 3.5-3.5 6 6"/></svg>
+      </button>
+      <input id="img-input" type="file" accept="image/*" class="hidden" aria-hidden="true">
       <input id="msg-input" type="text" placeholder="Ketik pesan…" maxlength="2000">
       <button type="submit" id="send-btn" title="Kirim" aria-label="Kirim">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="#fff"><path d="M12 3l7 8h-4v10h-6V11H5z"/></svg>
@@ -74,7 +79,16 @@
   </div>
 </div>
 
+<!-- ============ PENAMPIL GAMBAR SEKALI-LIHAT ============ -->
+<div id="vo-viewer" class="hidden" role="dialog" aria-label="Gambar dilihat sekali">
+  <div class="vo-top">
+    <span class="vo-note">Dilihat sekali — tutup untuk menghapus</span>
+    <button id="vo-close" aria-label="Tutup">&#10005;</button>
+  </div>
+  <img id="vo-img" alt="Gambar dilihat sekali">
+</div>
+
 <script src="config.js"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

