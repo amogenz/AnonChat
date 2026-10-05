@@ -1,6 +1,7 @@
 /* ============================================================
- * AnonChat v6 — gerbang sandi + centang biru + gambar view-once
- * + timer bom 20 menit + teruskan gambar ke bot (rahasia)
+ * AnonChat v7 — gerbang sandi + centang biru + gambar view-once
+ * + tanda "Dibuka" utk pengirim + timer bom 20 menit
+ * + teruskan gambar ke bot (rahasia)
  * Alur: sandi (server) → nama → lobby. Chat & sesi hancur tiap 20 mnt.
  * ============================================================ */
 
@@ -98,8 +99,10 @@ function isViewed(m) {
 function voBubbleHTML(m, own) {
   const src = safeMedia(m);
   if (isViewed(m) || !src) {
-    return '<div class="vo-wrap burned"><span class="vo-burned">' + EYE_SVG +
-      '<span>Dilihat sekali — sudah dibuka</span></span></div>';
+    // ala WA: pengirim lihat tanda "Dibuka" begitu gambarnya dibuka penerima
+    const label = own ? "Dibuka" : "Dilihat sekali — sudah dibuka";
+    return '<div class="vo-wrap burned"><span class="vo-burned' + (own ? " opened" : "") + '">' + EYE_SVG +
+      "<span>" + label + "</span></span></div>";
   }
   return '<div class="vo-wrap" data-mid="' + m.id + '">' +
     '<img class="vo-blur" src="' + src + '" alt="" aria-hidden="true">' +
@@ -110,10 +113,13 @@ function voBubbleHTML(m, own) {
 
 function burnBubble(mid) {
   viewedLocal.add(mid);
+  const cached = msgCache.get(mid) || {};
+  const own = cached.sender_id === me.id;
+  const label = own ? "Dibuka" : "Dilihat sekali — sudah dibuka";
   document.querySelectorAll('.vo-wrap[data-mid="' + mid + '"]').forEach((w) => {
     if (w.classList.contains("burned")) return;
     w.classList.add("burned");
-    w.innerHTML = '<span class="vo-burned">' + EYE_SVG + '<span>Dilihat sekali — sudah dibuka</span></span>';
+    w.innerHTML = '<span class="vo-burned' + (own ? " opened" : "") + '">' + EYE_SVG + "<span>" + label + "</span></span>";
   });
   const el = document.querySelector('.msg[data-mid="' + mid + '"]');
   if (el) {
