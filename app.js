@@ -98,6 +98,15 @@ function isViewed(m) {
   return viewedLocal.has(m.id) || (m.viewed_by || []).length > 0;
 }
 
+/* Sinkronkan SEMUA data-mid di dalam bubble (luar + vo-wrap + tombol buka)
+   dari id temp ke id asli. Kalau ada yang masih id temp, burnBubble yang
+   dipicu realtime UPDATE tak bisa menemukan bubble-nya (bug: tanda "Dibuka"
+   cuma muncul setelah refresh). */
+function syncMid(el, tmpId, realId) {
+  el.dataset.mid = realId;
+  el.querySelectorAll('[data-mid="' + tmpId + '"]').forEach((n) => { n.dataset.mid = realId; });
+}
+
 function voBubbleHTML(m, own) {
   const src = safeMedia(m);
   if (isViewed(m) || !src) {
@@ -118,10 +127,17 @@ function burnBubble(mid) {
   const cached = msgCache.get(mid) || {};
   const own = cached.sender_id === me.id;
   const label = own ? "Dibuka" : "Dilihat sekali — sudah dibuka";
-  document.querySelectorAll('.vo-wrap[data-mid="' + mid + '"]').forEach((w) => {
+  const burnedHTML = '<span class="vo-burned' + (own ? " opened" : "") + '">' + EYE_SVG + "<span>" + label + "</span></span>";
+  let wraps = Array.from(document.querySelectorAll('.vo-wrap[data-mid="' + mid + '"]'));
+  if (!wraps.length) {
+    // fallback: id temp vs id asli tidak sinkron — cari lewat bubble induk
+    const inner = document.querySelector('.msg[data-mid="' + mid + '"] .vo-wrap');
+    if (inner) wraps = [inner];
+  }
+  wraps.forEach((w) => {
     if (w.classList.contains("burned")) return;
     w.classList.add("burned");
-    w.innerHTML = '<span class="vo-burned' + (own ? " opened" : "") + '">' + EYE_SVG + "<span>" + label + "</span></span>";
+    w.innerHTML = burnedHTML;
   });
   const el = document.querySelector('.msg[data-mid="' + mid + '"]');
   if (el) {
@@ -788,7 +804,7 @@ function wireUI() {
     }
     const el = document.querySelector('[data-mid="' + tmpId + '"]');
     if (el) {
-      el.dataset.mid = data.id;
+      syncMid(el, tmpId, data.id);
       const meta = el.querySelector(".msg-meta");
       if (meta) meta.innerHTML = fmtTime(data.created_at) + tickHTML("sent");
     }
