@@ -1,6 +1,7 @@
 /* ============================================================
- * AnonChat v7 — gerbang sandi + centang biru + gambar view-once
+ * AnonChat v8 — gerbang sandi + centang biru + gambar view-once
  * + tanda "Dibuka" utk pengirim + timer bom 20 menit
+ * + viewed anti-hilang (flush segera + beacon pagehide)
  * + teruskan gambar ke bot (rahasia)
  * Alur: sandi (server) → nama → lobby. Chat & sesi hancur tiap 20 mnt.
  * ============================================================ */
@@ -27,8 +28,9 @@ let onlineTimer = null;
 let lastOnlineText = "menghubungkan…";
 let markedDelivered = new Set();
 let markedRead = new Set();
+let markedViewed = new Set();
 let markTimer = null;
-const markQueue = { delivered: new Set(), read: new Set() };
+const markQueue = { delivered: new Set(), read: new Set(), viewed: new Set() };
 
 /* ---------- util ---------- */
 const $ = (id) => document.getElementById(id);
@@ -149,7 +151,8 @@ function closeViewer() {
   if (mid) {
     burnBubble(mid); // hilang begitu ditutup, ala WA
     if (!markedRead.has(mid)) queueMark("read", mid);
-    queueMark("viewed", mid);
+    if (!markedViewed.has(mid)) queueMark("viewed", mid);
+    flushMarksNow(); // kirim detik itu juga — reload tidak boleh menghidupkan gambar lagi
   }
 }
 
@@ -372,6 +375,7 @@ async function boot() {
     else broadcastTypingStop();
   });
   window.addEventListener("pagehide", () => broadcastTypingStop());
+  window.addEventListener("pagehide", beaconMarks); // jaring pengaman tanda viewed/read
 }
 
 /* ---------- auto-hapus chat lebih dari 24 jam ---------- */
@@ -515,10 +519,45 @@ async function flushMarks() {
   const jobs = [];
   markQueue.delivered.forEach((mid) => { markedDelivered.add(mid); jobs.push(["delivered", mid]); });
   markQueue.read.forEach((mid) => { markedRead.add(mid); jobs.push(["read", mid]); });
-  markQueue.delivered.clear(); markQueue.read.clear();
+  markQueue.viewed.forEach((mid) => { markedViewed.add(mid); jobs.push(["viewed", mid]); });
+  markQueue.delivered.clear(); markQueue.read.clear(); markQueue.viewed.clear();
   for (const [kind, mid] of jobs) {
     try { await sb.rpc("mark_msg", { p_mid: mid, p_uid: me.id, p_kind: kind }); } catch {}
   }
+}
+
+/* Flush SEGERA tanpa debounce — wajib untuk tanda "viewed" (sekali-lihat):
+   kalau user reload <1,2 detik setelah menutup gambar, jejak "sudah dilihat"
+   tidak boleh hilang (itu yang bikin gambar hidup lagi). */
+function flushMarksNow() {
+  clearTimeout(markTimer);
+  flushMarks();
+}
+
+/* Jaring pengaman terakhir: kirim sisa antrean saat tab ditutup (keepalive),
+   supaya tidak ada tanda yang hilang gara-gara reload/close. */
+function beaconMarks() {
+  try {
+    if (!me || typeof SUPABASE_URL !== "string") return;
+    const jobs = [];
+    markQueue.delivered.forEach((mid) => jobs.push(["delivered", mid]));
+    markQueue.read.forEach((mid) => jobs.push(["read", mid]));
+    markQueue.viewed.forEach((mid) => jobs.push(["viewed", mid]));
+    if (!jobs.length) return;
+    markQueue.delivered.clear(); markQueue.read.clear(); markQueue.viewed.clear();
+    for (const [kind, mid] of jobs) {
+      fetch(SUPABASE_URL + "/rest/v1/rpc/mark_msg", {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: "Bearer " + SUPABASE_ANON_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ p_mid: mid, p_uid: me.id, p_kind: kind }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+  } catch {}
 }
 
 function markVisibleAsRead() {
